@@ -17,6 +17,13 @@ class ApiService {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      // Para DELETE o respuestas vacías, retornar sin parsear JSON
+      const contentLength = response.headers.get('content-length');
+      if (response.status === 204 || contentLength === '0' || !contentLength) {
+        return {} as T;
+      }
+      
       return await response.json();
     } catch (error) {
       console.error('API request failed:', error);

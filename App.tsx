@@ -133,11 +133,31 @@ const App: React.FC = () => {
 
   // --- Actions: Goals ---
   const handleSaveGoal = async (goalData: SavingsGoal | Omit<SavingsGoal, 'id'>) => {
-    trtoast.error
+    try {
       if ('id' in goalData && goalData.id) {
         // Edit
         const updatedGoal = await apiService.updateGoal(goalData.id, goalData as Omit<SavingsGoal, 'history'>);
         setState(prev => ({
+          ...prev,
+          goals: prev.goals.map(g => g.id === goalData.id ? updatedGoal : g)
+        }));
+      } else {
+        // Add
+        const newGoal = await apiService.createGoal(goalData);
+        setState(prev => ({
+          ...prev,
+          goals: [...prev.goals, newGoal]
+        }));
+      }
+      setIsGoalFormOpen(false);
+      setEditingGoal(null);
+    } catch (error) {
+      console.error('Failed to save goal:', error);
+      toast.error('Error al guardar la meta. Inténtalo de nuevo.');
+    }
+  };
+
+  const handleDeleteGoal = async (id: string) => {
     toast.custom((t) => (
       <div className="bg-white rounded-lg shadow-lg p-4 flex flex-col gap-3 border border-slate-200">
         <p className="font-semibold text-slate-900">¿Eliminar esta meta de ahorro?</p>
@@ -169,27 +189,7 @@ const App: React.FC = () => {
           </button>
         </div>
       </div>
-    )); setIsGoalFormOpen(false);
-      setEditingGoal(null);
-    } catch (error) {
-      console.error('Failed to save goal:', error);
-      alert('Error al guardar la meta. Inténtalo de nuevo.');
-    }
-  };
-
-  const handleDeleteGoal = async (id: string) => {
-    if (confirm('¿Eliminar esta meta de ahorro?')) {
-      try {
-        await apiService.deleteGoal(id);
-        setState(prev => ({
-          ...prev,
-          goals: prev.goals.filter(g => g.id !== id)
-        }));
-      } catch (error) {
-        toast.errorle.error('Failed to delete goal:', error);
-        alert('Error al eliminar la meta. Inténtalo de nuevo.');
-      }
-    }
+    ));
   };
 
   const openDepositModal = (goal: SavingsGoal) => {
@@ -197,7 +197,47 @@ const App: React.FC = () => {
     setDepositAmount('');
     setDepositSource('');
     setIsDepositModalOpen(true);
-  };toast.custom((t) => (
+  };
+
+  const handleDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(depositAmount);
+    if (selectedGoalId && !isNaN(amount) && amount > 0) {
+      try {
+        const newTransaction = await apiService.addGoalDeposit(selectedGoalId, {
+          amount,
+          note: depositSource || 'Aporte manual'
+        });
+
+        setState(prev => ({
+          ...prev,
+          goals: prev.goals.map(g => {
+            if (g.id === selectedGoalId) {
+              return {
+                ...g,
+                currentAmount: g.currentAmount + amount,
+                history: [...(g.history || []), newTransaction]
+              };
+            }
+            return g;
+          })
+        }));
+        setIsDepositModalOpen(false);
+        setSelectedGoalId(null);
+      } catch (error) {
+        console.error('Failed to add deposit:', error);
+        toast.error('Error al agregar el depósito. Inténtalo de nuevo.');
+      }
+    }
+  };
+
+  const handleViewGoalDetails = (goal: SavingsGoal) => {
+    setViewingGoal(goal);
+    setIsGoalDetailsOpen(true);
+  };
+
+  const handleDeleteGoalTransaction = async (goalId: string, transactionId: string) => {
+    toast.custom((t) => (
       <div className="bg-white rounded-lg shadow-lg p-4 flex flex-col gap-3 border border-slate-200">
         <p className="font-semibold text-slate-900">¿Eliminar este aporte? Se restará el monto del total acumulado.</p>
         <div className="flex gap-2 justify-end">
@@ -245,48 +285,7 @@ const App: React.FC = () => {
           </button>
         </div>
       </div>
-    ));   console.error('Failed to add deposit:', error);
-        alert('Error al agregar el depósito. Inténtalo de nuevo.');
-      <Toaster position="top-right" richColors />
-      }
-    }
-  };
-
-  const handleViewGoalDetails = (goal: SavingsGoal) => {
-    setViewingGoal(goal);
-    setIsGoalDetailsOpen(true);
-  };
-
-  const handleDeleteGoalTransaction = async (goalId: string, transactionId: string) => {
-    if (!confirm('¿Eliminar este aporte? Se restará el monto del total acumulado.')) return;
-
-    try {
-      await apiService.deleteGoalDeposit(goalId, transactionId);
-
-      setState(prev => {
-        const updatedGoals = prev.goals.map(g => {
-          if (g.id !== goalId) return g;
-          
-          const txToDelete = g.history.find(t => t.id === transactionId);
-          if (!txToDelete) return g;
-
-          return {
-            ...g,
-            currentAmount: g.currentAmount - txToDelete.amount,
-            history: g.history.filter(t => t.id !== transactionId)
-          };
-        });
-
-        // Update the currently viewed goal so the modal updates immediately
-        const updatedViewingGoal = updatedGoals.find(g => g.id === goalId);
-        if (updatedViewingGoal) setViewingGoal(updatedViewingGoal);
-
-        return { ...prev, goals: updatedGoals };
-      });
-    } catch (error) {
-      console.error('Failed to delete goal transaction:', error);
-      alert('Error al eliminar el aporte. Inténtalo de nuevo.');
-    }
+    ));
   };
 
   // --- General ---
@@ -308,6 +307,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-24 md:pb-0 md:pl-64">
+      <Toaster position="top-right" richColors />
       {loading ? (
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
